@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
-import json, csv, os
+import os, json, csv
 from flask_sqlalchemy import SQLAlchemy
+from Conexion.conexion import get_connection  # Conexión a MySQL
 
 app = Flask(__name__)
 
@@ -9,12 +10,17 @@ RUTA_TXT = "datos/datos.txt"
 RUTA_JSON = "datos/datos.json"
 RUTA_CSV = "datos/datos.csv"
 
-# --- Config SQLite ---
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database/usuarios.db"
+# -----------------------
+# Configuración SQLite
+# -----------------------
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'database', 'usuarios.db')}"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 
-# --- Modelo BD ---
+# -----------------------
+# Modelo SQLite
+# -----------------------
 class Usuario(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
@@ -22,18 +28,20 @@ class Usuario(db.Model):
 with app.app_context():
     db.create_all()
 
-# Página principal
+# -----------------------
+# Rutas principales
+# -----------------------
 @app.route('/')
 def index():
     return render_template("index.html")
 
-
 # -----------------------
-# PERSISTENCIA CON TXT
+# Persistencia con TXT
 # -----------------------
 @app.route('/guardar_txt', methods=['POST'])
 def guardar_txt():
     dato = request.form.get("dato")
+    os.makedirs(os.path.dirname(RUTA_TXT), exist_ok=True)
     with open(RUTA_TXT, "a") as f:
         f.write(dato + "\n")
     return "Dato guardado en TXT"
@@ -46,9 +54,8 @@ def leer_txt():
         contenido = f.readlines()
     return render_template("resultado.html", datos=contenido)
 
-
 # -----------------------
-# PERSISTENCIA CON JSON
+# Persistencia con JSON
 # -----------------------
 @app.route('/guardar_json', methods=['POST'])
 def guardar_json():
@@ -63,7 +70,7 @@ def guardar_json():
                 datos = []
 
     datos.append(dato)
-
+    os.makedirs(os.path.dirname(RUTA_JSON), exist_ok=True)
     with open(RUTA_JSON, "w") as f:
         json.dump(datos, f)
 
@@ -77,13 +84,13 @@ def leer_json():
         datos = json.load(f)
     return jsonify(datos)
 
-
 # -----------------------
-# PERSISTENCIA CON CSV
+# Persistencia con CSV
 # -----------------------
 @app.route('/guardar_csv', methods=['POST'])
 def guardar_csv():
     dato = request.form.get("dato")
+    os.makedirs(os.path.dirname(RUTA_CSV), exist_ok=True)
     with open(RUTA_CSV, "a", newline="") as f:
         escritor = csv.writer(f)
         escritor.writerow([dato])
@@ -98,9 +105,8 @@ def leer_csv():
         datos = [fila for fila in lector]
     return render_template("resultado.html", datos=datos)
 
-
 # -----------------------
-# PERSISTENCIA CON SQLITE
+# Persistencia con SQLite
 # -----------------------
 @app.route('/guardar_sqlite', methods=['POST'])
 def guardar_sqlite():
@@ -115,8 +121,34 @@ def leer_sqlite():
     usuarios = Usuario.query.all()
     return render_template("resultado.html", datos=[u.nombre for u in usuarios])
 
+# -----------------------
+# Persistencia con MySQL
+# -----------------------
+@app.route('/guardar_mysql', methods=['POST'])
+def guardar_mysql():
+    nombre = request.form.get("dato")
+    mail = request.form.get("mail", "")  # opcional
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO usuarios (nombre, mail) VALUES (%s, %s)", (nombre, mail))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return "Usuario guardado en MySQL"
 
+@app.route('/leer_mysql')
+def leer_mysql():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT nombre, mail FROM usuarios")
+    datos = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template("resultado.html", datos=[f"{n} ({m})" for n, m in datos])
+
+# -----------------------
 # Ejecutar la app
+# -----------------------
 if __name__ == "__main__":
     app.run(debug=True)
 from flask_sqlalchemy import SQLAlchemy
@@ -148,3 +180,36 @@ def guardar_sqlite():
 def leer_sqlite():
     usuarios = Usuario.query.all()
     return render_template("resultado.html", datos=[u.nombre for u in usuarios])
+# -----------------------
+# PERSISTENCIA CON MySQL
+# -----------------------
+from mysql.connector import Error
+
+@app.route('/guardar_mysql', methods=['POST'])
+def guardar_mysql():
+    nombre = request.form.get("dato")
+    mail = request.form.get("mail", "")
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO usuarios (nombre, mail) VALUES (%s, %s)", (nombre, mail))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return "Usuario guardado en MySQL ✅"
+    except Error as e:
+        return f"Error al guardar en MySQL: {e}"
+
+@app.route('/leer_mysql')
+def leer_mysql():
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT nombre, mail FROM usuarios")
+        datos = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return render_template("resultado.html", datos=[f"{n} ({m})" for n, m in datos])
+    except Error as e:
+        return f"Error al leer de MySQL: {e}"
+
