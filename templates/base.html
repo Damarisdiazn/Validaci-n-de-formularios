@@ -1,26 +1,70 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>{% block title %}Mi App{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>{% block title %}Mi Tienda{% endblock %}</title>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #fff0f6;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: #d6336c;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 22px;
+        }
+        nav a {
+            color: white;
+            text-decoration: none;
+            margin-left: 15px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        nav a:hover {
+            color: #ffe6f0;
+        }
+        main {
+            padding: 20px;
+        }
+        .btn {
+            padding: 6px 12px;
+            background-color: #ff77a9;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+        .btn:hover {
+            background-color: #d6336c;
+        }
+    </style>
+    {% block head %}{% endblock %}
 </head>
 <body>
     <header>
-        <h1>Mi Aplicación</h1>
+        <h1>Mi Tienda Cute</h1>
         <nav>
-            <a href="{{ url_for('index') }}">Inicio</a> |
-            <a href="{{ url_for('register') }}">Registro</a> |
-            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('catalogo') }}">Catálogo</a>
+            <a href="{{ url_for('ver_carrito') }}">Canasta</a>
+            <a href="{{ url_for('mis_compras') }}">Mis Compras</a>
+            <a href="{{ url_for('logout') }}">Cerrar sesión</a>
         </nav>
     </header>
-    <hr>
     <main>
         {% block content %}{% endblock %}
     </main>
-    <hr>
-    <footer>
-        <p>&copy; 2025 Mi App</p>
-    </footer>
 </body>
 </html>

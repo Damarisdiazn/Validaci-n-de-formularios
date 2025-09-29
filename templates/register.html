@@ -1,9 +1,25 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro</title>
+</head>
+<body>
+    <h2>Crear cuenta</h2>
+    <form method="POST">
+        <label>Nombre:</label><br>
+        <input type="text" name="nombre" required><br><br>
 
-{% block title %}Acerca de{% endblock %}
+        <label>Email:</label><br>
+        <input type="email" name="email" required><br><br>
 
-{% block content %}
-<h1>Acerca de</h1>
-<p>Esta es la página de información de la aplicación.</p>
-{% endblock %}
+        <label>Contraseña:</label><br>
+        <input type="password" name="password" required><br><br>
+
+        <button type="submit">Registrarse</button>
+    </form>
+
+    <p>¿Ya tienes una cuenta? <a href="{{ url_for('login') }}">Inicia sesión</a></p>
+</body>
+</html>
 

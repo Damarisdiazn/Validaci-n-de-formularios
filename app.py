@@ -1,45 +1,57 @@
-# app.py
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-import os, json, csv
-from Conexion.conexion import get_connection  # tu conexión a MySQL
+from xhtml2pdf import pisa
+from io import BytesIO
+from datetime import datetime
+from flask_migrate import Migrate
+import os
 
 # ---------------------------
-# Configuración de Flask
+# Configuración Flask
 # ---------------------------
 app = Flask(__name__)
-app.secret_key = "clave_secreta"
-
-# Carpeta de datos
-RUTA_TXT = "datos/datos.txt"
-RUTA_JSON = "datos/datos.json"
-RUTA_CSV = "datos/datos.csv"
+app.secret_key = os.urandom(24)  # clave más segura
 
 # ---------------------------
-# Configuración SQLite
+# Configuración SQLAlchemy
 # ---------------------------
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{os.path.join(BASE_DIR, 'database', 'usuarios.db')}"
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/desarrollo_web'
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
 db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 # ---------------------------
-# Modelo SQLite / Login
+# Modelos
 # ---------------------------
 class Usuario(db.Model, UserMixin):
-    id = db.Column(db.Integer, primary_key=True)
+    __tablename__ = 'usuarios'
+    id = db.Column('id_usuario', db.Integer, primary_key=True)
     nombre = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), unique=True)
-    password = db.Column(db.String(200))
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
 
-with app.app_context():
-    os.makedirs(os.path.join(BASE_DIR, 'database'), exist_ok=True)
-    db.create_all()
+class Compra(db.Model):
+    __tablename__ = 'compras'
+    id_compra = db.Column(db.Integer, primary_key=True)
+    id_usuario = db.Column(db.Integer, db.ForeignKey('usuarios.id_usuario'), nullable=False)
+    fecha = db.Column(db.DateTime, default=datetime.utcnow)
+    total = db.Column(db.Float, nullable=False)
+
+class DetalleCompra(db.Model):
+    __tablename__ = 'detalle_compra'
+    id_detalle = db.Column(db.Integer, primary_key=True)
+    id_compra = db.Column(db.Integer, db.ForeignKey('compras.id_compra'), nullable=False)
+    id_producto = db.Column(db.Integer, nullable=False)
+    nombre_producto = db.Column(db.String(100), nullable=False)
+    cantidad = db.Column(db.Integer, nullable=False)
+    precio = db.Column(db.Float, nullable=False)
+    imagen = db.Column(db.String(100), nullable=False)
 
 # ---------------------------
-# Configuración Flask-Login
+# Flask-Login
 # ---------------------------
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -50,36 +62,42 @@ def load_user(user_id):
     return Usuario.query.get(int(user_id))
 
 # ---------------------------
+# Catálogo de productos
+# ---------------------------
+CATALOGO = [
+    {"id_producto": 1, "nombre": "Galleta Pink Star", "precio": 2.5, "imagen": "galleta1.png"},
+    {"id_producto": 2, "nombre": "Galleta Cute Heart", "precio": 3.0, "imagen": "galleta2.png"},
+    {"id_producto": 3, "nombre": "Galleta Mini Bunny", "precio": 2.0, "imagen": "galleta3.png"},
+    {"id_producto": 4, "nombre": "Galleta Sweet Cloud", "precio": 2.8, "imagen": "galleta4.png"},
+    {"id_producto": 5, "nombre": "Galleta Lovely Cupcake", "precio": 3.5, "imagen": "galleta5.png"},
+]
+
+# ---------------------------
 # Rutas principales
 # ---------------------------
 @app.route('/')
 def index():
-    return render_template("index.html")
+    return redirect(url_for('login'))
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    return render_template("dashboard.html", nombre=current_user.nombre)
-
-# ---------------------------
-# Registro y login
-# ---------------------------
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
         nombre = request.form['nombre']
         email = request.form['email']
-        password = generate_password_hash(request.form['password'])
-        
+        password = request.form['password']
+
         if Usuario.query.filter_by(email=email).first():
-            flash("Email ya registrado")
+            flash('El correo ya está registrado', 'warning')
             return redirect(url_for('register'))
 
-        nuevo_usuario = Usuario(nombre=nombre, email=email, password=password)
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+        nuevo_usuario = Usuario(nombre=nombre, email=email, password=hashed_password)
         db.session.add(nuevo_usuario)
         db.session.commit()
-        flash('Usuario registrado correctamente')
+
+        flash('Usuario registrado con éxito. Ahora puedes iniciar sesión.', 'success')
         return redirect(url_for('login'))
+
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -88,123 +106,180 @@ def login():
         email = request.form['email']
         password = request.form['password']
         user = Usuario.query.filter_by(email=email).first()
+
         if user and check_password_hash(user.password, password):
             login_user(user)
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('catalogo'))
         else:
-            flash('Credenciales incorrectas')
+            flash('Credenciales incorrectas', 'danger')
+
     return render_template('login.html')
 
 @app.route('/logout')
 @login_required
 def logout():
     logout_user()
+    session.pop('carrito', None)
     return redirect(url_for('login'))
 
-# ---------------------------
-# Persistencia con TXT
-# ---------------------------
-@app.route('/guardar_txt', methods=['POST'])
-def guardar_txt():
-    dato = request.form.get("dato")
-    os.makedirs(os.path.dirname(RUTA_TXT), exist_ok=True)
-    with open(RUTA_TXT, "a") as f:
-        f.write(dato + "\n")
-    return "Dato guardado en TXT"
-
-@app.route('/leer_txt')
-def leer_txt():
-    if not os.path.exists(RUTA_TXT):
-        return "No hay datos aún."
-    with open(RUTA_TXT, "r") as f:
-        contenido = f.readlines()
-    return render_template("resultado.html", datos=contenido)
+@app.route('/catalogo')
+@login_required
+def catalogo():
+    return render_template("catalogo.html", productos=CATALOGO)
 
 # ---------------------------
-# Persistencia con JSON
+# Carrito
 # ---------------------------
-@app.route('/guardar_json', methods=['POST'])
-def guardar_json():
-    dato = request.form.get("dato")
-    datos = []
+@app.route('/carrito')
+@login_required
+def ver_carrito():
+    carrito = session.get('carrito', {})
+    productos = []
+    total = 0
 
-    if os.path.exists(RUTA_JSON):
-        with open(RUTA_JSON, "r") as f:
-            try:
-                datos = json.load(f)
-            except:
-                datos = []
+    for id_str, cantidad in carrito.items():
+        producto = next((p for p in CATALOGO if p["id_producto"] == int(id_str)), None)
+        if producto:
+            subtotal = float(producto["precio"]) * int(cantidad)
+            total += subtotal
+            productos.append({
+                "id_producto": producto["id_producto"],
+                "nombre": producto["nombre"],
+                "precio": producto["precio"],
+                "imagen": producto["imagen"],
+                "cantidad": cantidad,
+                "subtotal": subtotal
+            })
 
-    datos.append(dato)
-    os.makedirs(os.path.dirname(RUTA_JSON), exist_ok=True)
-    with open(RUTA_JSON, "w") as f:
-        json.dump(datos, f)
+    return render_template('carrito.html', productos=productos, total=total)
 
-    return "Dato guardado en JSON"
+@app.route('/agregar/<int:producto_id>', methods=['POST'])
+@login_required
+def agregar_al_carrito(producto_id):
+    producto = next((p for p in CATALOGO if p["id_producto"] == producto_id), None)
+    if not producto:
+        flash("Producto no encontrado", "danger")
+        return redirect(url_for('catalogo'))
 
-@app.route('/leer_json')
-def leer_json():
-    if not os.path.exists(RUTA_JSON):
-        return jsonify([])
-    with open(RUTA_JSON, "r") as f:
-        datos = json.load(f)
-    return jsonify(datos)
+    carrito = session.get('carrito', {})
+    id_str = str(producto_id)
+    carrito[id_str] = carrito.get(id_str, 0) + 1
+    session['carrito'] = carrito
+    session.modified = True
+    flash(f'{producto["nombre"]} se agregó a tu canasta 🛒', 'success')
+    return redirect(url_for('catalogo'))
 
-# ---------------------------
-# Persistencia con CSV
-# ---------------------------
-@app.route('/guardar_csv', methods=['POST'])
-def guardar_csv():
-    dato = request.form.get("dato")
-    os.makedirs(os.path.dirname(RUTA_CSV), exist_ok=True)
-    with open(RUTA_CSV, "a", newline="") as f:
-        escritor = csv.writer(f)
-        escritor.writerow([dato])
-    return "Dato guardado en CSV"
+@app.route('/actualizar_carrito/<int:producto_id>', methods=['POST'])
+@login_required
+def actualizar_carrito(producto_id):
+    accion = request.form['accion']
+    carrito = session.get('carrito', {})
+    id_str = str(producto_id)
+    if id_str in carrito:
+        if accion == 'sumar':
+            carrito[id_str] += 1
+        elif accion == 'restar' and carrito[id_str] > 1:
+            carrito[id_str] -= 1
+    session['carrito'] = carrito
+    session.modified = True
+    return redirect(url_for('ver_carrito'))
 
-@app.route('/leer_csv')
-def leer_csv():
-    if not os.path.exists(RUTA_CSV):
-        return "No hay datos en CSV"
-    with open(RUTA_CSV, "r") as f:
-        lector = csv.reader(f)
-        datos = [fila for fila in lector]
-    return render_template("resultado.html", datos=datos)
-
-# ---------------------------
-# Persistencia con MySQL
-# ---------------------------
-@app.route('/guardar_mysql', methods=['POST'])
-def guardar_mysql():
-    nombre = request.form.get("dato")
-    email = request.form.get("email", "")
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO usuarios (nombre, email) VALUES (%s, %s)", (nombre, email))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return "Usuario guardado en MySQL ✅"
-    except Exception as e:
-        return f"Error al guardar en MySQL: {e}"
-
-@app.route('/leer_mysql')
-def leer_mysql():
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT nombre, email FROM usuarios")
-        datos = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return render_template("resultado.html", datos=[f"{n} ({m})" for n, m in datos])
-    except Exception as e:
-        return f"Error al leer de MySQL: {e}"
+@app.route('/eliminar/<int:producto_id>')
+@login_required
+def eliminar_del_carrito(producto_id):
+    carrito = session.get('carrito', {})
+    carrito.pop(str(producto_id), None)
+    session['carrito'] = carrito
+    session.modified = True
+    flash('Producto eliminado de la canasta 🗑️', 'info')
+    return redirect(url_for('ver_carrito'))
 
 # ---------------------------
-# Ejecutar la app
+# Finalizar compra
 # ---------------------------
-if __name__ == '__main__':
+@app.route('/finalizar_compra', methods=['POST'])
+@login_required
+def finalizar_compra():
+    carrito = session.get('carrito', {})
+    if not carrito:
+        flash('Tu canasta está vacía', 'info')
+        return redirect(url_for('catalogo'))
+
+    total = sum(
+        float(next(p for p in CATALOGO if p["id_producto"] == int(id_str))["precio"]) * int(cantidad)
+        for id_str, cantidad in carrito.items()
+    )
+
+    num_facturas_usuario = Compra.query.filter_by(id_usuario=current_user.id).count()
+    num_factura_usuario = num_facturas_usuario + 1
+
+    nueva_compra = Compra(
+        id_usuario=current_user.id,
+        total=round(total, 2),
+        fecha=datetime.utcnow()
+    )
+    db.session.add(nueva_compra)
+    db.session.commit()
+
+    for id_str, cantidad in carrito.items():
+        producto = next((p for p in CATALOGO if p["id_producto"] == int(id_str)), None)
+        if producto:
+            detalle = DetalleCompra(
+                id_compra=nueva_compra.id_compra,
+                id_producto=producto["id_producto"],
+                nombre_producto=producto["nombre"],
+                cantidad=int(cantidad),
+                precio=float(producto["precio"]),
+                imagen=producto["imagen"]
+            )
+            db.session.add(detalle)
+    db.session.commit()
+
+    session.pop('carrito')
+    flash(f'Compra finalizada con éxito. Factura #{num_factura_usuario} - Total: ${total:.2f}', 'success')
+    return redirect(url_for('mis_compras'))
+
+# ---------------------------
+# Historial de compras
+# ---------------------------
+@app.route('/mis_compras')
+@login_required
+def mis_compras():
+    compras = Compra.query.filter_by(id_usuario=current_user.id).order_by(Compra.fecha.asc()).all()
+    detalles = {c.id_compra: DetalleCompra.query.filter_by(id_compra=c.id_compra).all() for c in compras}
+
+    # Asignar número temporal para cada compra
+    for idx, compra in enumerate(compras, start=1):
+        compra.numero_usuario = idx
+
+    return render_template('mis_compras.html', compras=compras, detalles=detalles)
+
+# ---------------------------
+# Factura PDF
+# ---------------------------
+@app.route('/factura/<int:id_compra>')
+@login_required
+def factura(id_compra):
+    compra = Compra.query.get_or_404(id_compra)
+    if compra.id_usuario != current_user.id:
+        flash("No tienes permiso para ver esta factura", "danger")
+        return redirect(url_for('mis_compras'))
+
+    detalles = DetalleCompra.query.filter_by(id_compra=id_compra).all()
+    total = sum(d.precio * d.cantidad for d in detalles)
+
+    rendered = render_template('factura_pdf.html', compra=compra, detalles=detalles, usuario=current_user, total=total)
+    pdf = BytesIO()
+    result = pisa.CreatePDF(rendered, dest=pdf)
+    if result.err:
+        flash("Error al generar PDF", "danger")
+        return redirect(url_for('mis_compras'))
+
+    pdf.seek(0)
+    return send_file(pdf, as_attachment=True, download_name=f"factura_{compra.id_compra}.pdf", mimetype='application/pdf')
+
+# ---------------------------
+# Ejecutar app
+# ---------------------------
+if __name__ == "__main__":
     app.run(debug=True)
-from models import User  # tu modelo de usuario para MySQL

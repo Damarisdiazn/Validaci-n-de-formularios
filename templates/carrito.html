@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4 text-center">Tu Canasta</h2>
+
+    {% if productos %}
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th>Imagen</th>
+                <th>Producto</th>
+                <th>Precio</th>
+                <th>Cantidad</th>
+                <th>Subtotal</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in productos %}
+            <tr>
+                <td><img src="{{ url_for('static', filename='img/' ~ p.imagen) }}" style="height: 70px; object-fit: cover;"></td>
+                <td>{{ p.nombre }}</td>
+                <td>${{ p.precio }}</td>
+                <td class="d-flex align-items-center">
+                    <form action="{{ url_for('actualizar_carrito', producto_id=p.id_producto) }}" method="POST">
+                        <input type="hidden" name="accion" value="restar">
+                        <button type="submit" class="btn btn-sm btn-secondary me-1">-</button>
+                    </form>
+                    {{ p.cantidad }}
+                    <form action="{{ url_for('actualizar_carrito', producto_id=p.id_producto) }}" method="POST">
+                        <input type="hidden" name="accion" value="sumar">
+                        <button type="submit" class="btn btn-sm btn-secondary ms-1">+</button>
+                    </form>
+                </td>
+                <td>${{ p.subtotal }}</td>
+                <td>
+                    <a href="{{ url_for('eliminar_del_carrito', producto_id=p.id_producto) }}" class="btn btn-sm btn-danger">Eliminar</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="4" class="text-end">Total:</th>
+                <th>${{ total }}</th>
+                <th></th>
+            </tr>
+        </tfoot>
+    </table>
+
+    <form action="{{ url_for('finalizar_compra') }}" method="POST" class="text-end">
+        <button type="submit" class="btn btn-fucsia btn-lg">Finalizar Compra</button>
+    </form>
+
+    {% else %}
+    <p class="text-center">Tu canasta está vacía 😢</p>
+    {% endif %}
+</div>
+
+<style>
+.btn-fucsia {
+    background-color: #ff1db1;
+    color: white;
+    border: none;
+    font-weight: bold;
+}
+.btn-fucsia:hover {
+    background-color: #e60097;
+    color: white;
+}
+</style>
+{% endblock %}

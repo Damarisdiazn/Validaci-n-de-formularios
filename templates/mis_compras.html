@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Mis Compras{% endblock %}
+
+{% block content %}
+<h1>Mis Compras</h1>
+
+{% for compra in compras %}
+<div class="compra" style="background-color: #ffe6f0; border-radius: 15px; padding: 20px; margin-bottom: 25px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);">
+    <h2>Compra #{{ compra.numero_usuario }}</h2>
+    <p><strong>Fecha:</strong> {{ compra.fecha.strftime('%d/%m/%Y %H:%M') }}</p>
+
+    <table style="width:100%; border-collapse: collapse; margin-top: 10px;">
+        <thead>
+            <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Precio unitario</th>
+                <th>Subtotal</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in detalles[compra.id_compra] %}
+            <tr style="background-color: #fff0f6;">
+                <td>{{ d.nombre_producto }}</td>
+                <td>{{ d.cantidad }}</td>
+                <td>${{ '%.2f'|format(d.precio) }}</td>
+                <td>${{ '%.2f'|format(d.precio * d.cantidad) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr>
+                <th colspan="3" style="text-align:right; color:#c11244;">Total:</th>
+                <th>${{ '%.2f'|format(compra.total) }}</th>
+            </tr>
+        </tfoot>
+    </table>
+
+    <a class="btn" href="{{ url_for('factura', id_compra=compra.id_compra) }}" target="_blank">Descargar Factura</a>
+</div>
+{% endfor %}
+{% endblock %}

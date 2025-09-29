@@ -1,0 +1,9 @@
+total = 0
+for id_str, cantidad in carrito.items():
+    producto = next((p for p in CATALOGO if p["id_producto"] == int(id_str)), None)
+    if producto:
+        total += float(producto["precio"]) * int(cantidad)
+
+nueva_compra = Compra(id_usuario=current_user.id, total=total)
+db.session.add(nueva_compra)
+db.session.commit()
